@@ -121,97 +121,123 @@ namespace YourAppNamespace.Controllers
 
         // POST: api/patients/sync
         [HttpPost("sync")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> SyncFromApp([FromForm] SyncPatientMultipartDto dto)
+[Consumes("multipart/form-data")]
+public async Task<IActionResult> SyncFromApp([FromForm] SyncPatientMultipartDto dto)
+{
+    _logger.LogInformation("📥 Received sync request for: {Name}", dto.Name);
+
+    if (!ModelState.IsValid)
+    {
+        _logger.LogWarning("❗ Invalid model state for patient: {Name}", dto.Name);
+        return BadRequest(ModelState);
+    }
+
+    // Step 1: Parse symptoms
+    List<string> parsedSymptoms;
+    try
+    {
+        parsedSymptoms = JsonSerializer.Deserialize<List<string>>(dto.Symptoms ?? "[]") ?? new();
+        _logger.LogInformation("🧾 Parsed symptoms: {Symptoms}", string.Join(", ", parsedSymptoms));
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "❗ Invalid JSON array for 'symptoms': {Symptoms}", dto.Symptoms);
+        return BadRequest("Invalid JSON array in 'symptoms' field.");
+    }
+
+    // Step 2: Save image (optional)
+    string? imageUrl = null;
+    try
+    {
+        imageUrl = await SaveImageAsync(dto.Image);
+        if (imageUrl != null)
+            _logger.LogInformation("🖼️ Saved image to: {ImageUrl}", imageUrl);
+        else
+            _logger.LogInformation("ℹ️ No image provided.");
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "❗ Image upload failed.");
+        return BadRequest("Image upload failed: " + ex.Message);
+    }
+
+    try
+    {
+        // Step 3: Create patient
+        var patient = new Patient
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
+            Name = dto.Name,
+            DateOfBirth = dto.DateOfBirth,
+            Gender = dto.Gender,
+            HeightCm = dto.HeightCm,
+            WeightKg = dto.WeightKg,
+            Bmi = dto.Bmi,
+            DiagnosisNote = dto.DiagnosisNote ?? "",
+            OtherSymptoms = dto.OtherSymptoms ?? "",
+            ConsentGiven = dto.ConsentGiven,
+            ImagePath = imageUrl,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
 
-            // Parse symptoms
-            List<string> parsedSymptoms;
-            try
+        _context.Patients.Add(patient);
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("✅ Created patient: {PatientId}", patient.Id);
+
+        // Step 4: Add symptoms (if any)
+        foreach (var symptomName in parsedSymptoms.Where(s => !string.IsNullOrWhiteSpace(s)))
+        {
+            var trimmed = symptomName.Trim();
+
+            var existingSymptom = await _context.Symptoms
+                .FirstOrDefaultAsync(s => s.Name == trimmed);
+
+            if (existingSymptom == null)
             {
-                parsedSymptoms = JsonSerializer.Deserialize<List<string>>(dto.Symptoms ?? "[]") ?? new();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Invalid JSON for symptoms: {Json}", dto.Symptoms);
-                return BadRequest("Invalid JSON array in 'symptoms' field.");
-            }
-
-            // Save image
-            string? imageUrl = null;
-            try
-            {
-                imageUrl = await SaveImageAsync(dto.Image);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Image upload failed.");
-                return BadRequest("Image upload failed: " + ex.Message);
-            }
-
-            // Create patient
-            var patient = new Patient
-            {
-                Name = dto.Name,
-                DateOfBirth = dto.DateOfBirth,
-                Gender = dto.Gender,
-                HeightCm = dto.HeightCm,
-                WeightKg = dto.WeightKg,
-                Bmi = dto.Bmi,
-                DiagnosisNote = dto.DiagnosisNote ?? "",
-                OtherSymptoms = dto.OtherSymptoms ?? "",
-                ConsentGiven = dto.ConsentGiven,
-                ImagePath = imageUrl,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            _context.Patients.Add(patient);
-            await _context.SaveChangesAsync();
-
-            // Add symptoms
-            foreach (var symptomName in parsedSymptoms.Where(s => !string.IsNullOrWhiteSpace(s)))
-            {
-                var trimmed = symptomName.Trim();
-
-                var existingSymptom = await _context.Symptoms
-                    .FirstOrDefaultAsync(s => s.Name == trimmed);
-
-                if (existingSymptom == null)
-                {
-                    existingSymptom = new Symptom { Name = trimmed };
-                    _context.Symptoms.Add(existingSymptom);
-                    await _context.SaveChangesAsync();
-                }
-
-                _context.PatientSymptomsRecord.Add(new PatientSymptomRecord
-                {
-                    PatientId = patient.Id,
-                    SymptomId = existingSymptom.Id
-                });
+                existingSymptom = new Symptom { Name = trimmed };
+                _context.Symptoms.Add(existingSymptom);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("➕ Created new symptom: {Symptom}", trimmed);
             }
 
-            // Track sync
-            _context.SyncQueue.Add(new SyncQueue
+            _context.PatientSymptomsRecord.Add(new PatientSymptomRecord
             {
-                EntityName = "Patient",
-                EntityId = patient.Id,
-                CreatedAt = DateTime.UtcNow,
-                Synced = true
-            });
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                success = true,
-                patientId = patient.Id,
-                imageUrl,
-                message = "✅ Patient and symptoms synced"
+                PatientId = patient.Id,
+                SymptomId = existingSymptom.Id
             });
         }
+
+        // Step 5: Track sync
+        _context.SyncQueue.Add(new SyncQueue
+        {
+            EntityName = "Patient",
+            EntityId = patient.Id,
+            CreatedAt = DateTime.UtcNow,
+            Synced = true
+        });
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("✅ Patient and symptoms saved successfully for: {PatientId}", patient.Id);
+
+        return Ok(new
+        {
+            success = true,
+            patientId = patient.Id,
+            imageUrl,
+            message = "✅ Patient and symptoms synced"
+        });
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "💥 Unhandled error syncing patient: {Name}", dto.Name);
+        return StatusCode(500, new
+        {
+            success = false,
+            message = "Internal Server Error. Please check logs."
+        });
+    }
+}
 
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(string id, [FromBody] Patient updated)
