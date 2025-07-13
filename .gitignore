@@ -1,0 +1,3 @@
+# .gitignore (at root of your project)
+.env
+*.local.json
