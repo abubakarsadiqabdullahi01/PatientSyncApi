@@ -177,7 +177,9 @@ public async Task<IActionResult> SyncFromApp([FromForm] SyncPatientMultipartDto 
             ConsentGiven = dto.ConsentGiven,
             ImagePath = imageUrl,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            Synced = true, // ✅ Mark as synced
+            SyncError = null
         };
 
         _context.Patients.Add(patient);
