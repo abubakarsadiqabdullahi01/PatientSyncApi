@@ -26,24 +26,68 @@ namespace YourAppNamespace.Controllers
         {
             var patients = await _context.Patients
                 .Include(p => p.Symptoms)
-                .ThenInclude(ps => ps.Symptom)
+                    .ThenInclude(ps => ps.Symptom)
                 .Include(p => p.Images)
                 .ToListAsync();
 
-            return Ok(patients);
+            var result = patients.Select(p => new PatientDto
+            {
+                Id = p.Id,
+                Name = p.Name,
+                DateOfBirth = p.DateOfBirth,
+                Gender = p.Gender,
+                HeightCm = p.HeightCm,
+                WeightKg = p.WeightKg,
+                Bmi = p.Bmi,
+                DiagnosisNote = p.DiagnosisNote,
+                OtherSymptoms = p.OtherSymptoms,
+                ConsentGiven = p.ConsentGiven,
+                ImagePath = p.ImagePath,
+                CreatedAt = p.CreatedAt,
+                UpdatedAt = p.UpdatedAt,
+                Synced = p.Synced,
+                SyncError = p.SyncError,
+                Symptoms = p.Symptoms.Select(s => s.Symptom.Name).ToList(),
+                Images = p.Images.Select(i => i.FilePath ?? "").ToList()
+            });
+
+            return Ok(result);
         }
 
         // GET: api/patients/{id}
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(string id)
         {
-            var patient = await _context.Patients
+            var p = await _context.Patients
                 .Include(p => p.Symptoms)
-                .ThenInclude(ps => ps.Symptom)
+                    .ThenInclude(ps => ps.Symptom)
                 .Include(p => p.Images)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
-            return patient is null ? NotFound() : Ok(patient);
+            if (p == null) return NotFound();
+
+            var dto = new PatientDto
+            {
+                Id = p.Id,
+                Name = p.Name,
+                DateOfBirth = p.DateOfBirth,
+                Gender = p.Gender,
+                HeightCm = p.HeightCm,
+                WeightKg = p.WeightKg,
+                Bmi = p.Bmi,
+                DiagnosisNote = p.DiagnosisNote,
+                OtherSymptoms = p.OtherSymptoms,
+                ConsentGiven = p.ConsentGiven,
+                ImagePath = p.ImagePath,
+                CreatedAt = p.CreatedAt,
+                UpdatedAt = p.UpdatedAt,
+                Synced = p.Synced,
+                SyncError = p.SyncError,
+                Symptoms = p.Symptoms.Select(s => s.Symptom.Name).ToList(),
+                Images = p.Images.Select(i => i.FilePath ?? "").ToList()
+            };
+
+            return Ok(dto);
         }
 
         // POST: api/patients
@@ -83,7 +127,7 @@ namespace YourAppNamespace.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            // 1. Parse symptoms
+            // Parse symptoms
             List<string> parsedSymptoms;
             try
             {
@@ -95,7 +139,7 @@ namespace YourAppNamespace.Controllers
                 return BadRequest("Invalid JSON array in 'symptoms' field.");
             }
 
-            // 2. Save image (optional)
+            // Save image
             string? imageUrl = null;
             try
             {
@@ -107,7 +151,7 @@ namespace YourAppNamespace.Controllers
                 return BadRequest("Image upload failed: " + ex.Message);
             }
 
-            // 3. Create patient
+            // Create patient
             var patient = new Patient
             {
                 Name = dto.Name,
@@ -125,9 +169,9 @@ namespace YourAppNamespace.Controllers
             };
 
             _context.Patients.Add(patient);
-            await _context.SaveChangesAsync(); // Needed to get Patient.Id
+            await _context.SaveChangesAsync();
 
-            // 4. Add symptom relations
+            // Add symptoms
             foreach (var symptomName in parsedSymptoms.Where(s => !string.IsNullOrWhiteSpace(s)))
             {
                 var trimmed = symptomName.Trim();
@@ -149,7 +193,7 @@ namespace YourAppNamespace.Controllers
                 });
             }
 
-            // 5. Track sync
+            // Track sync
             _context.SyncQueue.Add(new SyncQueue
             {
                 EntityName = "Patient",
@@ -169,7 +213,6 @@ namespace YourAppNamespace.Controllers
             });
         }
 
-        // PUT: api/patients/{id}
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(string id, [FromBody] Patient updated)
         {
@@ -183,7 +226,6 @@ namespace YourAppNamespace.Controllers
             return NoContent();
         }
 
-        // DELETE: api/patients/{id}
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(string id)
         {

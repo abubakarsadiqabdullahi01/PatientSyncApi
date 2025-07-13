@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PatientSyncApi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ecd4b9f77d974ac7899f7f5e20d963eb43afbad0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6d38414aa3b82107a2ed56af19d3db9c80c266d0")]
 [assembly: System.Reflection.AssemblyProductAttribute("PatientSyncApi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PatientSyncApi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
